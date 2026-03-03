@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Data
+data/faces/*
+data/attendance/*
+data/train/*
+data/test/*
+!data/.gitkeep
+
+# Models
+models/*.pkl
+!models/__init__.py
+!models/face_recognition_model.py
+
+# Logs
+logs/*.log
+logs/*.txt
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Flask
+instance/
+.webassets-cache
+
+# Images
+*.jpg
+*.jpeg
+*.png
+!FINALBG.jpg
+!static/facesbground.jpg
