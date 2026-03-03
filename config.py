@@ -19,6 +19,7 @@ class Config:
     
     # Models
     MODEL_PATH = os.path.join(MODELS_DIR, 'face_recognition_model.pkl')
+    DEEP_MODEL_PATH = os.path.join(MODELS_DIR, 'deep_face_model.pkl')
     FACE_ENCODER_PATH = os.path.join(MODELS_DIR, 'face_encoder.pkl')
     LABEL_ENCODER_PATH = os.path.join(MODELS_DIR, 'label_encoder.pkl')
     
@@ -33,6 +34,8 @@ class Config:
     # Model settings
     KNN_NEIGHBORS = 5
     CONFIDENCE_THRESHOLD = 0.6
+    FACE_DISTANCE_THRESHOLD = 0.6  # For face_recognition library
+    USE_DEEP_LEARNING = True  # Use modern deep learning model
     
     # Flask settings
     SECRET_KEY = 'your-secret-key-here'

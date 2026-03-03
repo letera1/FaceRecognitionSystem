@@ -1,8 +1,17 @@
-"""Advanced Face Recognition Attendance System"""
+"""Advanced Face Recognition Attendance System with Deep Learning"""
 import cv2
 import os
 from flask import Flask, request, render_template, jsonify, redirect, url_for
 from config import Config
+
+# Try to import deep learning model, fallback to traditional
+try:
+    from models.deep_face_model import DeepFaceModel, MTCNNFaceDetector
+    USE_DEEP_MODEL = Config.USE_DEEP_LEARNING
+except ImportError:
+    print("Deep learning models not available, using traditional model")
+    USE_DEEP_MODEL = False
+
 from models import FaceRecognitionModel
 from utils import FaceDetector, DataManager
 
@@ -14,8 +23,14 @@ app.config['SECRET_KEY'] = Config.SECRET_KEY
 Config.create_directories()
 
 # Initialize components
-face_detector = FaceDetector()
-face_model = FaceRecognitionModel()
+if USE_DEEP_MODEL:
+    print("Using Deep Learning Model (face_recognition)")
+    face_model = DeepFaceModel()
+    face_detector = MTCNNFaceDetector()
+else:
+    print("Using Traditional Model (KNN/SVM)")
+    face_model = FaceRecognitionModel()
+    face_detector = FaceDetector()
 
 # Load background image
 try:
