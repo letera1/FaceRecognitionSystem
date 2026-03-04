@@ -19,7 +19,9 @@ from src.config import Config
 from src.utils import DataManager
 
 # Initialize Flask app
-app = Flask(__name__)
+app = Flask(__name__, 
+            template_folder='../templates',
+            static_folder='../static')
 app.config['SECRET_KEY'] = Config.SECRET_KEY
 
 # Create necessary directories
