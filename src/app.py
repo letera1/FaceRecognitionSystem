@@ -5,8 +5,8 @@ import numpy as np
 import joblib
 import face_recognition
 from flask import Flask, request, render_template, jsonify, redirect, url_for
-from config import Config
-from utils import DataManager
+from src.config import Config
+from src.utils import DataManager
 
 # Initialize Flask app
 app = Flask(__name__)
