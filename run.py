@@ -9,9 +9,8 @@ from src.app import app
 from src.config import Config
 
 if __name__ == '__main__':
-    print(f"🚀 Starting Face Recognition System")
-    print(f"📍 Server: http://{Config.HOST}:{Config.PORT}")
-    print(f"📊 Model: {Config.EMBEDDING_MODEL}")
+    print(f"Starting Face Recognition System")
+    print(f"Server: http://{Config.HOST}:{Config.PORT}")
     
     app.run(
         host=Config.HOST,

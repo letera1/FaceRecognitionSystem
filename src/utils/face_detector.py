@@ -1,7 +1,7 @@
 """Face detection utilities"""
 import cv2
 import numpy as np
-from config import Config
+from src.config import Config
 
 class FaceDetector:
     def __init__(self):

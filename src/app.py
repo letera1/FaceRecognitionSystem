@@ -1,10 +1,20 @@
-"""Modern Face Recognition Attendance System with Deep Learning"""
+"""Modern Face Recognition Attendance System"""
 import cv2
 import os
 import numpy as np
 import joblib
-import face_recognition
 from flask import Flask, request, render_template, jsonify, redirect, url_for
+
+# Try to import face_recognition, fallback if not available
+try:
+    import face_recognition
+    FACE_RECOGNITION_AVAILABLE = True
+    print("✅ face_recognition library loaded")
+except ImportError:
+    FACE_RECOGNITION_AVAILABLE = False
+    print("⚠️ face_recognition not installed. Using basic mode.")
+    print("   Install with: pip install face-recognition")
+
 from src.config import Config
 from src.utils import DataManager
 
@@ -48,6 +58,9 @@ def home():
 @app.route('/add_user', methods=['POST'])
 def add_user():
     """Add new user to the system"""
+    if not FACE_RECOGNITION_AVAILABLE:
+        return jsonify({'error': 'face_recognition library not installed'}), 500
+    
     username = request.form.get('newusername')
     user_id = request.form.get('newuserid')
     
@@ -112,6 +125,9 @@ def add_user():
 @app.route('/take_attendance')
 def take_attendance():
     """Take attendance using face recognition"""
+    if not FACE_RECOGNITION_AVAILABLE:
+        return jsonify({'error': 'face_recognition library not installed'}), 500
+    
     if model_data is None:
         return jsonify({'error': 'No trained model found. Please train using Jupyter notebook.'}), 400
     

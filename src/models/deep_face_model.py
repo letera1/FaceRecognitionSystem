@@ -29,6 +29,9 @@ class DeepFaceModel:
         
     def extract_face_encoding(self, image):
         """Extract 128-dimensional face encoding using dlib"""
+        if not FACE_RECOGNITION_AVAILABLE:
+            return None
+        
         # Convert BGR to RGB
         rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
@@ -138,6 +141,9 @@ class DeepFaceModel:
     
     def compare_faces(self, known_encoding, face_image, tolerance=0.6):
         """Compare face with known encoding"""
+        if not FACE_RECOGNITION_AVAILABLE:
+            return False, 1.0
+        
         unknown_encoding = self.extract_face_encoding(face_image)
         
         if unknown_encoding is None:
@@ -180,7 +186,7 @@ class MTCNNFaceDetector:
             self.detector = MTCNN()
             self.use_mtcnn = True
         except:
-            print("MTCNN not available, using Haar Cascade")
+            print("⚠️ MTCNN not available, using Haar Cascade")
             self.detector = cv2.CascadeClassifier(Config.HAAR_CASCADE_PATH)
             self.use_mtcnn = False
     

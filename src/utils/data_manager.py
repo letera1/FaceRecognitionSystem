@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from config import Config
+from src.config import Config
 
 class DataManager:
     @staticmethod
