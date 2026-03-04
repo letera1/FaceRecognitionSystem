@@ -1,19 +1,12 @@
-"""Advanced Face Recognition Attendance System with Deep Learning"""
+"""Modern Face Recognition Attendance System with Deep Learning"""
 import cv2
 import os
+import numpy as np
+import joblib
+import face_recognition
 from flask import Flask, request, render_template, jsonify, redirect, url_for
 from config import Config
-
-# Try to import deep learning model, fallback to traditional
-try:
-    from models.deep_face_model import DeepFaceModel, MTCNNFaceDetector
-    USE_DEEP_MODEL = Config.USE_DEEP_LEARNING
-except ImportError:
-    print("Deep learning models not available, using traditional model")
-    USE_DEEP_MODEL = False
-
-from models import FaceRecognitionModel
-from utils import FaceDetector, DataManager
+from utils import DataManager
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -22,15 +15,13 @@ app.config['SECRET_KEY'] = Config.SECRET_KEY
 # Create necessary directories
 Config.create_directories()
 
-# Initialize components
-if USE_DEEP_MODEL:
-    print("Using Deep Learning Model (face_recognition)")
-    face_model = DeepFaceModel()
-    face_detector = MTCNNFaceDetector()
+# Load model if exists
+model_data = None
+if os.path.exists(Config.DEEP_MODEL_PATH):
+    model_data = joblib.load(Config.DEEP_MODEL_PATH)
+    print("✅ Deep learning model loaded")
 else:
-    print("Using Traditional Model (KNN/SVM)")
-    face_model = FaceRecognitionModel()
-    face_detector = FaceDetector()
+    print("⚠️ No model found. Please train using Jupyter notebook")
 
 # Load background image
 try:
@@ -45,7 +36,7 @@ def home():
     users = DataManager.get_all_users()
     
     return render_template(
-        'home_advanced.html',
+        'home.html',
         names=df['Name'].tolist() if not df.empty else [],
         ids=df['ID'].tolist() if not df.empty else [],
         times=df['Time'].tolist() if not df.empty else [],
@@ -68,20 +59,24 @@ def add_user():
     if any(u['id'] == user_id for u in users):
         return jsonify({'error': 'User ID already exists'}), 400
     
-    # Capture face images
+    # Capture face images using face_recognition
     cap = cv2.VideoCapture(0)
     captured_count = 0
     frame_count = 0
+    
+    print(f"Capturing images for {username} (ID: {user_id})")
     
     while captured_count < Config.NUM_IMAGES_PER_USER:
         ret, frame = cap.read()
         if not ret:
             break
         
-        faces = face_detector.detect_faces(frame)
+        # Convert to RGB for face_recognition
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        face_locations = face_recognition.face_locations(rgb_frame)
         
-        for (x, y, w, h) in faces:
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+        for (top, right, bottom, left) in face_locations:
+            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
             cv2.putText(
                 frame,
                 f'Captured: {captured_count}/{Config.NUM_IMAGES_PER_USER}',
@@ -93,14 +88,15 @@ def add_user():
             )
             
             # Capture every nth frame
-            if frame_count % Config.IMAGE_CAPTURE_INTERVAL == 0:
-                face_img = face_detector.extract_face(frame, (x, y, w, h))
-                DataManager.save_user_face(username, user_id, face_img, captured_count)
+            if frame_count % Config.IMAGE_CAPTURE_INTERVAL == 0 and len(face_locations) > 0:
+                face_img = frame[top:bottom, left:right]
+                face_resized = cv2.resize(face_img, Config.FACE_SIZE)
+                DataManager.save_user_face(username, user_id, face_resized, captured_count)
                 captured_count += 1
             
             frame_count += 1
         
-        cv2.imshow('Adding New User', frame)
+        cv2.imshow('Adding New User - Press ESC to stop', frame)
         
         if cv2.waitKey(1) == 27 or captured_count >= Config.NUM_IMAGES_PER_USER:
             break
@@ -108,48 +104,54 @@ def add_user():
     cap.release()
     cv2.destroyAllWindows()
     
-    # Retrain model
-    try:
-        num_images, num_users = face_model.train(model_type='knn')
-        return redirect(url_for('home'))
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    print(f"✅ Captured {captured_count} images")
+    print("⚠️ Please retrain the model using the Jupyter notebook")
+    
+    return redirect(url_for('home'))
 
 @app.route('/take_attendance')
 def take_attendance():
     """Take attendance using face recognition"""
-    if not os.path.exists(Config.MODEL_PATH):
-        return jsonify({'error': 'No trained model found. Please add users first.'}), 400
+    if model_data is None:
+        return jsonify({'error': 'No trained model found. Please train using Jupyter notebook.'}), 400
     
-    # Load model
-    face_model.load_model()
+    model = model_data['model']
+    label_encoder = model_data['label_encoder']
     
     cap = cv2.VideoCapture(0)
     recognized_users = set()
+    
+    print("Starting attendance capture...")
     
     while True:
         ret, frame = cap.read()
         if not ret:
             break
         
-        faces = face_detector.detect_faces(frame)
+        # Convert to RGB
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
-        for (x, y, w, h) in faces:
-            face_img = face_detector.extract_face(frame, (x, y, w, h))
-            
+        # Detect faces and get encodings
+        face_locations = face_recognition.face_locations(rgb_frame)
+        face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+        
+        for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
             try:
-                label, confidence = face_model.predict(face_img)
+                # Predict
+                prediction = model.predict([face_encoding])[0]
+                confidence = np.max(model.predict_proba([face_encoding]))
+                label = label_encoder.inverse_transform([prediction])[0]
                 
                 if confidence >= Config.CONFIDENCE_THRESHOLD:
                     name, user_id = label.split('_')
                     
-                    # Draw rectangle and label
-                    cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-                    cv2.rectangle(frame, (x, y-40), (x+w, y), (0, 255, 0), -1)
+                    # Draw green rectangle for recognized
+                    cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+                    cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 255, 0), cv2.FILLED)
                     cv2.putText(
                         frame,
                         f'{name} ({confidence:.2f})',
-                        (x+5, y-10),
+                        (left + 6, bottom - 6),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.6,
                         (255, 255, 255),
@@ -160,12 +162,14 @@ def take_attendance():
                     if label not in recognized_users:
                         if DataManager.save_attendance(name, user_id):
                             recognized_users.add(label)
+                            print(f"✅ Attendance marked for {name}")
                 else:
-                    cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255), 2)
+                    # Draw red rectangle for unknown
+                    cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
                     cv2.putText(
                         frame,
                         'Unknown',
-                        (x+5, y-10),
+                        (left + 6, bottom - 6),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.6,
                         (0, 0, 255),
@@ -174,21 +178,23 @@ def take_attendance():
             except Exception as e:
                 print(f"Recognition error: {e}")
         
-        # Display with background if available
+        # Display
         if img_background is not None:
             try:
                 img_background[162:162+480, 55:55+640] = cv2.resize(frame, (640, 480))
-                cv2.imshow('Attendance System', img_background)
+                cv2.imshow('Attendance System - Press ESC to stop', img_background)
             except:
-                cv2.imshow('Attendance System', frame)
+                cv2.imshow('Attendance System - Press ESC to stop', frame)
         else:
-            cv2.imshow('Attendance System', frame)
+            cv2.imshow('Attendance System - Press ESC to stop', frame)
         
         if cv2.waitKey(1) == 27:  # ESC key
             break
     
     cap.release()
     cv2.destroyAllWindows()
+    
+    print(f"✅ Attendance capture completed. {len(recognized_users)} users recognized")
     
     return redirect(url_for('home'))
 
