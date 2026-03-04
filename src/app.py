@@ -29,11 +29,17 @@ Config.create_directories()
 
 # Load model if exists
 model_data = None
-if os.path.exists(Config.DEEP_MODEL_PATH):
+model_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models', 'deep_face_model.pkl')
+
+if os.path.exists(model_path):
+    model_data = joblib.load(model_path)
+    print(f"✅ Model loaded from: {model_path}")
+elif os.path.exists(Config.DEEP_MODEL_PATH):
     model_data = joblib.load(Config.DEEP_MODEL_PATH)
-    print("✅ Deep learning model loaded")
+    print(f"✅ Model loaded from: {Config.DEEP_MODEL_PATH}")
 else:
-    print("⚠️ No model found. Please train using Jupyter notebook")
+    print(f"⚠️ No model found at: {model_path}")
+    print("   Please train using: python train_quick.py")
 
 # Load background image
 try:
@@ -60,9 +66,6 @@ def home():
 @app.route('/add_user', methods=['POST'])
 def add_user():
     """Add new user to the system"""
-    if not FACE_RECOGNITION_AVAILABLE:
-        return jsonify({'error': 'face_recognition library not installed'}), 500
-    
     username = request.form.get('newusername')
     user_id = request.form.get('newuserid')
     
@@ -74,10 +77,13 @@ def add_user():
     if any(u['id'] == user_id for u in users):
         return jsonify({'error': 'User ID already exists'}), 400
     
-    # Capture face images using face_recognition
+    # Capture face images using OpenCV (basic mode)
     cap = cv2.VideoCapture(0)
     captured_count = 0
     frame_count = 0
+    
+    # Load face detector
+    face_cascade = cv2.CascadeClassifier(Config.HAAR_CASCADE_PATH)
     
     print(f"Capturing images for {username} (ID: {user_id})")
     
@@ -86,12 +92,12 @@ def add_user():
         if not ret:
             break
         
-        # Convert to RGB for face_recognition
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        face_locations = face_recognition.face_locations(rgb_frame)
+        # Detect faces using Haar Cascade
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
         
-        for (top, right, bottom, left) in face_locations:
-            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+        for (x, y, w, h) in faces:
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
             cv2.putText(
                 frame,
                 f'Captured: {captured_count}/{Config.NUM_IMAGES_PER_USER}',
@@ -103,8 +109,8 @@ def add_user():
             )
             
             # Capture every nth frame
-            if frame_count % Config.IMAGE_CAPTURE_INTERVAL == 0 and len(face_locations) > 0:
-                face_img = frame[top:bottom, left:right]
+            if frame_count % Config.IMAGE_CAPTURE_INTERVAL == 0 and len(faces) > 0:
+                face_img = frame[y:y+h, x:x+w]
                 face_resized = cv2.resize(face_img, Config.FACE_SIZE)
                 DataManager.save_user_face(username, user_id, face_resized, captured_count)
                 captured_count += 1
@@ -127,17 +133,17 @@ def add_user():
 @app.route('/take_attendance')
 def take_attendance():
     """Take attendance using face recognition"""
-    if not FACE_RECOGNITION_AVAILABLE:
-        return jsonify({'error': 'face_recognition library not installed'}), 500
-    
     if model_data is None:
-        return jsonify({'error': 'No trained model found. Please train using Jupyter notebook.'}), 400
+        return jsonify({'error': 'No trained model found. Please train using Jupyter notebook first.'}), 400
     
     model = model_data['model']
     label_encoder = model_data['label_encoder']
     
     cap = cv2.VideoCapture(0)
     recognized_users = set()
+    
+    # Load face detector
+    face_cascade = cv2.CascadeClassifier(Config.HAAR_CASCADE_PATH)
     
     print("Starting attendance capture...")
     
@@ -146,30 +152,36 @@ def take_attendance():
         if not ret:
             break
         
-        # Convert to RGB
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Detect faces using Haar Cascade
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
         
-        # Detect faces and get encodings
-        face_locations = face_recognition.face_locations(rgb_frame)
-        face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
-        
-        for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
+        for (x, y, w, h) in faces:
             try:
+                # Extract face
+                face_img = frame[y:y+h, x:x+w]
+                face_resized = cv2.resize(face_img, Config.FACE_SIZE)
+                
+                # Preprocess for model
+                face_gray = cv2.cvtColor(face_resized, cv2.COLOR_BGR2GRAY)
+                face_normalized = face_gray / 255.0
+                face_flat = face_normalized.ravel().reshape(1, -1)
+                
                 # Predict
-                prediction = model.predict([face_encoding])[0]
-                confidence = np.max(model.predict_proba([face_encoding]))
+                prediction = model.predict(face_flat)[0]
+                confidence = np.max(model.predict_proba(face_flat))
                 label = label_encoder.inverse_transform([prediction])[0]
                 
                 if confidence >= Config.CONFIDENCE_THRESHOLD:
                     name, user_id = label.split('_')
                     
                     # Draw green rectangle for recognized
-                    cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-                    cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 255, 0), cv2.FILLED)
+                    cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                    cv2.rectangle(frame, (x, y-35), (x+w, y), (0, 255, 0), cv2.FILLED)
                     cv2.putText(
                         frame,
                         f'{name} ({confidence:.2f})',
-                        (left + 6, bottom - 6),
+                        (x + 6, y - 6),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.6,
                         (255, 255, 255),
@@ -183,11 +195,11 @@ def take_attendance():
                             print(f"✅ Attendance marked for {name}")
                 else:
                     # Draw red rectangle for unknown
-                    cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
+                    cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255), 2)
                     cv2.putText(
                         frame,
                         'Unknown',
-                        (left + 6, bottom - 6),
+                        (x + 6, y - 6),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.6,
                         (0, 0, 255),
